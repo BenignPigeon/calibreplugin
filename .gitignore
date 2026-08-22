@@ -1,0 +1,12 @@
+*.pyc
+__pycache__/
+*.zip
+*.egg-info/
+dist/
+build/
+.DS_Store
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
