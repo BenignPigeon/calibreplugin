@@ -91,6 +91,7 @@ class DownloadDialog(QDialog):
     status_signal = pyqtSignal(str)
     progress_signal = pyqtSignal(int, int, int)  # min, max, value
     close_button_signal = pyqtSignal(bool)
+    refresh_gui_signal = pyqtSignal()  # Signal to refresh the Calibre GUI
     
     def __init__(self, parent, gui, server_url, username, password, selected_libraries):
         QDialog.__init__(self, parent)
@@ -129,6 +130,7 @@ class DownloadDialog(QDialog):
         self.status_signal.connect(self._do_status)
         self.progress_signal.connect(self._do_progress)
         self.close_button_signal.connect(self._do_close_button)
+        self.refresh_gui_signal.connect(self._do_refresh_gui)
         
         # Start download in background thread
         self.download_thread = Thread(target=self.safe_download_process)
@@ -188,6 +190,21 @@ class DownloadDialog(QDialog):
         '''
         self.close_button.setEnabled(enabled)
         QCoreApplication.processEvents()
+    
+    def _do_refresh_gui(self):
+        '''
+        Slot that refreshes the Calibre GUI to show newly added books
+        '''
+        try:
+            # Safely refresh the book list in Calibre
+            self.gui.library_view.model().books_added(0)  
+            self.gui.library_view.model().refresh()
+            self.gui.tags_view.recount()
+            QCoreApplication.processEvents()
+            self.log('✅ Library view refreshed automatically')
+        except Exception as e:
+            self.log(f'⚠️  Auto-refresh failed: {e}')
+            self.log('   Please press F5 manually to see new books')
     
     def download_process(self):
         '''
@@ -412,12 +429,11 @@ class DownloadDialog(QDialog):
             # Summary
             self.log(f'\n📊 Import Summary: {added_count} added, {skipped_count} skipped')
             
-            # DO NOT refresh GUI - causes segfault in Calibre
-            # User must manually refresh (F5) or restart Calibre to see new books
+            # Trigger GUI refresh if books were added
             if added_count > 0:
                 self.log('')
-                self.log('⚠️  IMPORTANT: Press F5 or restart Calibre to see imported books')
-                self.log('   (Automatic refresh causes crashes)')
+                self.log('🔄 Refreshing library view...')
+                self.refresh_gui_signal.emit()
                     
         except Exception as e:
             import traceback
@@ -463,6 +479,7 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
     name = 'Audiobookshelf Downloader'
     
     # Declares the main action associated with this plugin
+    # Format: (name, icon_path, tooltip, keyboard_shortcut)
     action_spec = ('Audiobookshelf Downloader', None,
                    'Download ebooks from Audiobookshelf', None)
     
@@ -473,9 +490,12 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
         '''
         This method is called once per plugin, do initial setup here
         '''
-        # Set icon
+        # Load and set icon
         icon = get_icons('images/abs_icon.png')
         self.qaction.setIcon(icon)
+        
+        # Store the icon for menu items
+        self.plugin_icon = icon
         
         # Create menu
         self.menu = QMenu(self.gui)
