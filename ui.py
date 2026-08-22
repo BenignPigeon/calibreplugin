@@ -16,12 +16,19 @@ from threading import Thread
 from PyQt5.Qt import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                       QTextEdit, QProgressBar, QListWidget, QListWidgetItem,
                       QMessageBox, QApplication, Qt, QCheckBox, QMenu, QToolButton,
-                      pyqtSignal)
+                      pyqtSignal, QIcon, QPixmap)
 from PyQt5.QtCore import QCoreApplication
 
 from calibre.gui2.actions import InterfaceAction
 from calibre.gui2 import error_dialog, info_dialog
 from calibre_plugins.audiobookshelf_downloader.config import prefs
+
+# Import Calibre's resource loader for proper icon loading
+try:
+    from calibre.utils.resources import get_path as get_resources
+except ImportError:
+    # Fallback for older Calibre versions
+    from calibre_plugins.audiobookshelf_downloader import get_resources
 
 class LibrarySelectDialog(QDialog):
     '''
@@ -442,22 +449,31 @@ class DownloadDialog(QDialog):
     
     def is_duplicate(self, db, mi):
         '''
-        Check if book already exists in library
+        Check if book already exists in library using thread-safe new_api
         '''
         try:
             if not mi.title:
                 return False
             
-            # Search for books with same title
-            search_results = db.search_getting_ids(f'title:"{mi.title}"', '')
+            # Use new_api for thread-safe database access
+            api = db.new_api
+            
+            # Search for books with matching title
+            search_expr = f'title:"={mi.title}"'  # Exact title match
+            try:
+                search_results = api.search(search_expr)
+            except:
+                # Fallback to simpler search if exact match fails
+                search_expr = f'title:"{mi.title}"'
+                search_results = api.search(search_expr)
             
             if not search_results:
                 return False
             
-            # If we have author info, check author too
+            # If we have author info, check author match
             if mi.authors:
                 for book_id in search_results:
-                    existing_mi = db.get_metadata(book_id)
+                    existing_mi = api.get_metadata(book_id)
                     if existing_mi.authors and mi.authors:
                         # Compare author names (case insensitive)
                         existing_authors = {a.lower() for a in existing_mi.authors}
@@ -465,11 +481,13 @@ class DownloadDialog(QDialog):
                         if existing_authors & new_authors:  # If any author matches
                             return True
             else:
-                # No author info, just matching title is enough
+                # No author info provided, just matching title is enough
                 return True
                 
             return False
-        except:
+        except Exception as e:
+            # Log error but don't crash - just assume not duplicate
+            print(f"[Audiobookshelf] Duplicate check failed: {e}")
             return False
 
 class AudiobookshelfDownloaderAction(InterfaceAction):
@@ -480,7 +498,7 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
     
     # Declares the main action associated with this plugin
     # Format: (name, icon_path, tooltip, keyboard_shortcut)
-    action_spec = ('Audiobookshelf Downloader', None,
+    action_spec = ('Audiobookshelf', None,
                    'Download ebooks from Audiobookshelf', None)
     
     action_type = 'current'
@@ -643,42 +661,31 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
 
 def get_icons(icon_name):
     '''
-    Load plugin icon from images directory
+    Load plugin icon - tries multiple methods for compatibility
+    
+    :param icon_name: Path to icon relative to plugin root (e.g., 'images/abs_icon.png')
+    :return: QIcon object
     '''
     import os
-    from PyQt5.Qt import QIcon, QPixmap
     
+    # Method 1: Load from plugin zip file using load_resources
     try:
-        # Try to get icon from plugin resources
-        from calibre.utils.zipfile import ZipFile
         from calibre.customize.ui import find_plugin
-        
-        # Find this plugin
         plugin = find_plugin('Audiobookshelf Downloader')
-        if plugin:
-            plugin_path = plugin.plugin_path
-            if plugin_path and os.path.exists(plugin_path):
-                # If it's a zip file, extract the icon
-                if plugin_path.endswith('.zip'):
-                    with ZipFile(plugin_path, 'r') as zf:
-                        if icon_name in zf.namelist():
-                            icon_data = zf.read(icon_name)
-                            pixmap = QPixmap()
-                            pixmap.loadFromData(icon_data)
-                            if not pixmap.isNull():
-                                return QIcon(pixmap)
-                else:
-                    # If it's extracted, load directly
-                    icon_path = os.path.join(os.path.dirname(plugin_path), icon_name)
-                    if os.path.exists(icon_path):
-                        pixmap = QPixmap(icon_path)
-                        if not pixmap.isNull():
-                            return QIcon(pixmap)
+        if plugin is not None:
+            icon_data = plugin.load_resources([icon_name])
+            if icon_data:
+                # load_resources returns a dict with resource name as key
+                data = icon_data.get(icon_name)
+                if data:
+                    pixmap = QPixmap()
+                    pixmap.loadFromData(data)
+                    if not pixmap.isNull():
+                        return QIcon(pixmap)
     except Exception as e:
-        print(f"Icon loading error: {e}")
-        pass
+        print(f"[Audiobookshelf] Icon method 1 failed: {e}")
     
-    # Try from __file__ location
+    # Method 2: Load from filesystem (development mode or extracted plugin)
     try:
         plugin_dir = os.path.dirname(os.path.abspath(__file__))
         icon_path = os.path.join(plugin_dir, icon_name)
@@ -686,12 +693,34 @@ def get_icons(icon_name):
             pixmap = QPixmap(icon_path)
             if not pixmap.isNull():
                 return QIcon(pixmap)
-    except:
-        pass
+    except Exception as e:
+        print(f"[Audiobookshelf] Icon method 2 failed: {e}")
     
-    # Fallback to calibre default icon
+    # Method 3: Try reading directly from zip
+    try:
+        from calibre.customize.ui import find_plugin
+        from calibre.ptempfile import PersistentTemporaryFile
+        from zipfile import ZipFile
+        
+        plugin = find_plugin('Audiobookshelf Downloader')
+        if plugin and hasattr(plugin, 'plugin_path') and plugin.plugin_path:
+            if plugin.plugin_path.endswith('.zip'):
+                with ZipFile(plugin.plugin_path, 'r') as zf:
+                    if icon_name in zf.namelist():
+                        icon_data = zf.read(icon_name)
+                        pixmap = QPixmap()
+                        pixmap.loadFromData(icon_data)
+                        if not pixmap.isNull():
+                            return QIcon(pixmap)
+    except Exception as e:
+        print(f"[Audiobookshelf] Icon method 3 failed: {e}")
+    
+    # Fallback: Use Calibre's built-in download icon
     try:
         from calibre.gui2 import get_icons as get_calibre_icons
         return get_calibre_icons('download-metadata.png')
-    except:
-        return QIcon()
+    except Exception as e:
+        print(f"[Audiobookshelf] Fallback icon failed: {e}")
+    
+    # Final fallback: Empty icon
+    return QIcon()
