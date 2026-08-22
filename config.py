@@ -34,6 +34,10 @@ class ConfigWidget(QWidget):
         # Server Settings Group
         server_group = QGroupBox('Audiobookshelf Server Settings')
         server_layout = QFormLayout()
+        
+        # Force form fields to expand and fill the container width
+        server_layout.setFieldGrowthPolicy(QFormLayout.AllNonFixedFieldsGrow)
+        
         server_group.setLayout(server_layout)
 
         self.server_url_edit = QLineEdit(self)
