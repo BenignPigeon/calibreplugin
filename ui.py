@@ -508,21 +508,16 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
         '''
         This method is called once per plugin, do initial setup here
         '''
-        # Load and set icon
-        icon = get_icons('images/abs_icon.png')
+        icon = get_icons('images/abs_icon.png', 'Audiobookshelf Downloader')
         self.qaction.setIcon(icon)
         
-        # Store the icon for menu items
         self.plugin_icon = icon
         
-        # Create menu
         self.menu = QMenu(self.gui)
         self.qaction.setMenu(self.menu)
         
-        # Add main action
         self.qaction.triggered.connect(self.download_books)
         
-        # Add menu items
         self.create_menu_actions()
     
     def create_menu_actions(self):
@@ -658,69 +653,3 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
         Apply settings after configuration
         '''
         pass
-
-def get_icons(icon_name):
-    '''
-    Load plugin icon - tries multiple methods for compatibility
-    
-    :param icon_name: Path to icon relative to plugin root (e.g., 'images/abs_icon.png')
-    :return: QIcon object
-    '''
-    import os
-    
-    # Method 1: Load from plugin zip file using load_resources
-    try:
-        from calibre.customize.ui import find_plugin
-        plugin = find_plugin('Audiobookshelf Downloader')
-        if plugin is not None:
-            icon_data = plugin.load_resources([icon_name])
-            if icon_data:
-                # load_resources returns a dict with resource name as key
-                data = icon_data.get(icon_name)
-                if data:
-                    pixmap = QPixmap()
-                    pixmap.loadFromData(data)
-                    if not pixmap.isNull():
-                        return QIcon(pixmap)
-    except Exception as e:
-        print(f"[Audiobookshelf] Icon method 1 failed: {e}")
-    
-    # Method 2: Load from filesystem (development mode or extracted plugin)
-    try:
-        plugin_dir = os.path.dirname(os.path.abspath(__file__))
-        icon_path = os.path.join(plugin_dir, icon_name)
-        if os.path.exists(icon_path):
-            pixmap = QPixmap(icon_path)
-            if not pixmap.isNull():
-                return QIcon(pixmap)
-    except Exception as e:
-        print(f"[Audiobookshelf] Icon method 2 failed: {e}")
-    
-    # Method 3: Try reading directly from zip
-    try:
-        from calibre.customize.ui import find_plugin
-        from calibre.ptempfile import PersistentTemporaryFile
-        from zipfile import ZipFile
-        
-        plugin = find_plugin('Audiobookshelf Downloader')
-        if plugin and hasattr(plugin, 'plugin_path') and plugin.plugin_path:
-            if plugin.plugin_path.endswith('.zip'):
-                with ZipFile(plugin.plugin_path, 'r') as zf:
-                    if icon_name in zf.namelist():
-                        icon_data = zf.read(icon_name)
-                        pixmap = QPixmap()
-                        pixmap.loadFromData(icon_data)
-                        if not pixmap.isNull():
-                            return QIcon(pixmap)
-    except Exception as e:
-        print(f"[Audiobookshelf] Icon method 3 failed: {e}")
-    
-    # Fallback: Use Calibre's built-in download icon
-    try:
-        from calibre.gui2 import get_icons as get_calibre_icons
-        return get_calibre_icons('download-metadata.png')
-    except Exception as e:
-        print(f"[Audiobookshelf] Fallback icon failed: {e}")
-    
-    # Final fallback: Empty icon
-    return QIcon()
