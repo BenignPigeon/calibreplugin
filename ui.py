@@ -15,7 +15,9 @@ from threading import Thread
 
 from PyQt5.Qt import (QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, 
                       QTextEdit, QProgressBar, QListWidget, QListWidgetItem,
-                      QMessageBox, QApplication, Qt, QCheckBox, QMenu, QToolButton)
+                      QMessageBox, QApplication, Qt, QCheckBox, QMenu, QToolButton,
+                      pyqtSignal)
+from PyQt5.QtCore import QCoreApplication
 
 from calibre.gui2.actions import InterfaceAction
 from calibre.gui2 import error_dialog, info_dialog
@@ -84,6 +86,12 @@ class DownloadDialog(QDialog):
     '''
     Dialog showing download progress and logs
     '''
+    # Signal for thread-safe logging - emitted from background thread, received on main thread
+    log_signal = pyqtSignal(str)
+    status_signal = pyqtSignal(str)
+    progress_signal = pyqtSignal(int, int, int)  # min, max, value
+    close_button_signal = pyqtSignal(bool)
+    
     def __init__(self, parent, gui, server_url, username, password, selected_libraries):
         QDialog.__init__(self, parent)
         self.setWindowTitle('Downloading from Audiobookshelf')
@@ -116,6 +124,12 @@ class DownloadDialog(QDialog):
         
         self.resize(600, 400)
         
+        # Connect signals to slots for thread-safe UI updates
+        self.log_signal.connect(self._do_log)
+        self.status_signal.connect(self._do_status)
+        self.progress_signal.connect(self._do_progress)
+        self.close_button_signal.connect(self._do_close_button)
+        
         # Start download in background thread
         self.download_thread = Thread(target=self.safe_download_process)
         self.download_thread.daemon = True
@@ -132,20 +146,48 @@ class DownloadDialog(QDialog):
             self.log(f'\n\n💥 CRITICAL ERROR 💥')
             self.log(f'Error: {e}')
             self.log(f'\nFull traceback:\n{traceback.format_exc()}')
-            self.status_label.setText('Critical error occurred!')
-            self.progress_bar.setRange(0, 1)
-            self.progress_bar.setValue(1)
-            self.close_button.setEnabled(True)
+            self.status_signal.emit('Critical error occurred!')
+            self.progress_signal.emit(0, 1, 1)
+            self.close_button_signal.emit(True)
     
     def log(self, message):
         '''
-        Add a message to the log
+        Add a message to the log - thread-safe via signal
+        '''
+        self.log_signal.emit(message)
+    
+    def _do_log(self, message):
+        '''
+        Slot that performs the actual log update on the main thread
         '''
         self.log_text.append(message)
         # Scroll to bottom
         scrollbar = self.log_text.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
-        QApplication.processEvents()
+        # Process events to flush Qt's text rendering queue and prevent segfaults
+        QCoreApplication.processEvents()
+    
+    def _do_status(self, message):
+        '''
+        Slot that updates the status label on the main thread
+        '''
+        self.status_label.setText(message)
+        QCoreApplication.processEvents()
+    
+    def _do_progress(self, min_val, max_val, value):
+        '''
+        Slot that updates the progress bar on the main thread
+        '''
+        self.progress_bar.setRange(min_val, max_val)
+        self.progress_bar.setValue(value)
+        QCoreApplication.processEvents()
+    
+    def _do_close_button(self, enabled):
+        '''
+        Slot that enables/disables the close button on the main thread
+        '''
+        self.close_button.setEnabled(enabled)
+        QCoreApplication.processEvents()
     
     def download_process(self):
         '''
@@ -202,18 +244,17 @@ class DownloadDialog(QDialog):
                     self.log(f'✗ Import failed: {import_error}')
                     self.log(f'Import traceback:\n{traceback.format_exc()}')
             
-            self.status_label.setText('Download complete!')
+            self.status_signal.emit('Download complete!')
             self.log('\n✅ Done! Close this window and press F5 to see new books.')
             
         except Exception as e:
             import traceback
             self.log(f'\n✗ Error: {e}')
             self.log(f'Details: {traceback.format_exc()}')
-            self.status_label.setText('Download failed!')
+            self.status_signal.emit('Download failed!')
         finally:
-            self.progress_bar.setRange(0, 1)
-            self.progress_bar.setValue(1)
-            self.close_button.setEnabled(True)
+            self.progress_signal.emit(0, 1, 1)
+            self.close_button_signal.emit(True)
     
     def process_item(self, item_id, auth_headers, temp_dir):
         '''
