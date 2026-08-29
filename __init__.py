@@ -19,13 +19,13 @@ class AudiobookshelfDownloaderPlugin(InterfaceActionBase):
     description = 'Download ebooks from your Audiobookshelf server and add them to Calibre'
     supported_platforms = ['windows', 'osx', 'linux']
     author = 'benignpigeon'
-    version = (1, 0, 3)
-    minimum_calibre_version = (1, 0, 3)
+    version = (1, 0, 4)
+    minimum_calibre_version = (1, 0, 4)
 
     #: This field defines the GUI plugin class that contains all the code
     #: that actually does something. Its format is module_path:class_name
     #: The specified class must be defined in the specified module.
-    actual_plugin = 'calibre_plugins.audiobookshelf_downloader.ui:AudiobookshelfDownloaderAction'
+    actual_plugin = 'calibre_plugins.audiobookshelf_downloader.main:AudiobookshelfDownloaderAction'
 
     def is_customizable(self):
         '''
@@ -49,7 +49,7 @@ class AudiobookshelfDownloaderPlugin(InterfaceActionBase):
         displayed as a warning dialog to the user and the process will be
         aborted.
         '''
-        from calibre_plugins.audiobookshelf_downloader.config import ConfigWidget
+        from calibre_plugins.audiobookshelf_downloader.core.config import ConfigWidget
         return ConfigWidget()
 
     def save_settings(self, config_widget):

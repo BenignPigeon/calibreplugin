@@ -29,7 +29,7 @@ python3 build_plugin.py
 3. Restart Calibre
 
 ### Version Management
-- Version is stored in `version.txt` (format: `1.0.3`)
+- Version is stored in `version.txt` (format: `1.0.4`)
 - Build script auto-updates `__init__.py` version tuple from `version.txt`
 - To bump version: edit `version.txt`, then run `build_plugin.py`
 
@@ -37,38 +37,61 @@ python3 build_plugin.py
 
 ```
 .
-├── __init__.py              # Plugin entry point (InterfaceActionBase)
-├── config.py                # Configuration dialog (QWidget)
-├── ui.py                    # Main UI logic (InterfaceAction + dialogs)
+├── __init__.py              # Plugin entry point (InterfaceActionBase) — zip root
+├── main.py                  # Toolbar, dropdown menu, dialog routing
+├── core/
+│   ├── __init__.py
+│   ├── config.py            # Preferences / Customise Plugin dialog
+│   ├── api.py               # Audiobookshelf HTTP client
+│   ├── calibre_import.py    # Duplicate check + add_books
+│   ├── select_dialogs.py    # Shared checkbox-list UI + library/book pickers
+│   └── downloader.py        # Progress dialog + background download
 ├── version.txt              # Single source of truth for version
 ├── build_plugin.py          # Build script (creates ZIP)
-├── plugin-import-name-*.txt # Calibre plugin identifier
+├── plugin-import-name-*.txt # Calibre package name (required)
 ├── images/abs_icon.png      # Plugin toolbar icon
-└── README.md                # User documentation
+├── README.md                # User documentation
+├── AGENTS.md                # Agent instructions
+└── info.md                  # Brief map of coding files
 ```
 
-### Core Components (821 lines total)
+Calibre expects `__init__.py` at the **zip root**. The package name is `calibre_plugins.audiobookshelf_downloader` from `plugin-import-name-audiobookshelf_downloader.txt`, not from a wrapping folder. Python modules cannot use hyphens (`select_dialogs.py`, not `select-dialogs.py`).
 
-**`__init__.py` (61 lines)**
+### Core Components
+
+**`__init__.py`**
 - `AudiobookshelfDownloaderPlugin(InterfaceActionBase)` - Plugin registration
 - Defines metadata: name, version, author, description
-- Links to `ui.AudiobookshelfDownloaderAction` as `actual_plugin`
+- Links to `main.AudiobookshelfDownloaderAction` as `actual_plugin`
 - Provides `config_widget()` and `save_settings()` methods
 - **CRITICAL**: Enables `faulthandler` to debug segfaults
 
-**`config.py` (105 lines)**
+**`main.py`**
+- `AudiobookshelfDownloaderAction(InterfaceAction)` - Toolbar button and menu
+- Orchestrates: config check → login → library select → fetch items → book select → download dialog
+
+**`core/config.py`**
 - `ConfigWidget(QWidget)` - Settings UI
 - `prefs = JSONConfig('plugins/audiobookshelf_downloader')` - Config storage
-- Settings: `server_url`, `username`, `password`, `auto_import`, `skip_duplicates`
-- All defaults defined in `prefs.defaults` dict
+- Settings: `server_url`, `username`, `password`, `auto_import`, `skip_duplicates`, `selected_library_ids`
 
-**`ui.py` (655 lines)** - Main logic
-- `AudiobookshelfDownloaderAction(InterfaceAction)` - Toolbar button
-- `LibrarySelectDialog(QDialog)` - Library selection UI
-- `DownloadDialog(QDialog)` - Progress window with download thread
-- HTTP API calls to Audiobookshelf (login, libraries, items, download)
-- Duplicate detection via `is_duplicate()` (searches Calibre DB by title/author)
-- Import logic adds books to Calibre database
+**`core/api.py`**
+- `AbsClient` - login, libraries, paginated items, item details, file download
+- Shared User-Agent + Bearer headers
+- `normalize_item()` for the book picker
+
+**`core/select_dialogs.py`**
+- `CheckableListDialog` - searchable checkbox list; Select All/None and accept() use **visible rows only**
+- Default (Enter) button is Next / Download Selected, not Select All
+- `LibrarySelectDialog` - restores `prefs['selected_library_ids']` (checked vs unchecked); first run or no matching IDs → all checked
+- `ItemSelectDialog` - books start checked; display text is title/author/library
+
+**`core/downloader.py`**
+- `DownloadDialog` - progress UI and daemon download thread
+- Receives selected items only (does not re-scan libraries)
+
+**`core/calibre_import.py`**
+- `is_duplicate()` and `import_files()`
 
 ## Key Behaviors & Constraints
 
@@ -86,16 +109,18 @@ python3 build_plugin.py
 
 ### Threading Model
 - Main UI runs in Qt main thread
+- Library/item lists are fetched on the main thread (wait cursor)
 - Downloads run in background thread (`threading.Thread`)
 - Use `QApplication.processEvents()` for UI responsiveness
 - Thread is daemon for clean shutdown
+- Library view refresh must use a Qt signal (`refresh_gui_signal`) so it runs on the GUI thread
 
 ## API Endpoints (Audiobookshelf)
 
 ```python
 POST   /login                                    # Auth → returns token
 GET    /api/libraries                            # List libraries
-GET    /api/libraries/{id}/items                 # Items in library
+GET    /api/libraries/{id}/items                 # Items in library (paginated)
 GET    /api/items/{id}                           # Item details
 GET    /api/items/{id}/file/{ino}/download      # Download file
 ```
@@ -108,7 +133,7 @@ GET    /api/items/{id}/file/{ino}/download      # Download file
 3. Standard library (json, urllib, os, threading)
 4. PyQt5 imports
 5. Calibre imports
-6. Local imports
+6. Local imports (`calibre_plugins.audiobookshelf_downloader...` or relative `.api`)
 
 ### Naming Conventions
 - Classes: `PascalCase`
@@ -121,7 +146,7 @@ GET    /api/items/{id}/file/{ino}/download      # Download file
 # Plugin entry point
 class MyPlugin(InterfaceActionBase):
     name = 'Plugin Name'
-    actual_plugin = 'calibre_plugins.module.ui:ActionClass'
+    actual_plugin = 'calibre_plugins.module.main:ActionClass'
 
 # Action class
 class MyAction(InterfaceAction):
@@ -141,11 +166,13 @@ class MyAction(InterfaceAction):
 
 ## Common Pitfalls to Avoid
 
-1. **❌ GUI updates from background thread** → Segfault
-2. **❌ Missing User-Agent header** → Cloudflare 403 errors
-3. **❌ Not handling dialog close properly** → Calibre crashes on exit
-4. **❌ Hardcoded version in __init__.py** → Use `version.txt` + build script
-5. **❌ Forgetting `faulthandler.enable()`** → Harder to debug crashes
+1. **GUI updates from background thread** → Segfault
+2. **Missing User-Agent header** → Cloudflare 403 errors
+3. **Not handling dialog close properly** → Calibre crashes on exit
+4. **Hardcoded version in __init__.py** → Use `version.txt` + build script
+5. **Forgetting `faulthandler.enable()`** → Harder to debug crashes
+6. **Extra folder wrapping the zip** → Calibre cannot find `__init__.py`
+7. **Hyphenated module names** → ImportError
 
 ## Testing
 
@@ -162,12 +189,13 @@ python3 build_plugin.py
 # - Should authenticate successfully
 
 # 4. Test download
-# - Select libraries
+# - Select libraries (previous picks restored; search/filter works; Enter = Next)
+# - Select books (search/filter + Download Selected only include visible checks)
 # - Watch progress dialog
 # - Verify books imported (press F5 in Calibre)
 
 # 5. Test duplicate detection
-# - Download same library again
+# - Download the same books again
 # - Should show "⊘ Skipped (already in library)" messages
 ```
 
@@ -196,7 +224,8 @@ Calibre → Preferences → Miscellaneous → Open calibre configuration directo
 
 ## Version History
 
-- **v1.0.3** (current) - Segfault fix (removed GUI refresh), duplicate detection
+- **v1.0.4** (current) - Library/book pickers, remembered libraries, visible-only accept
+- **v1.0.3** - Segfault fix (GUI refresh via signal), duplicate detection
 - **v1.0.2** - Improved error handling
 - **v1.0.1** - Cloudflare authentication fix
 - **v1.0.0** - Initial release
@@ -204,29 +233,41 @@ Calibre → Preferences → Miscellaneous → Open calibre configuration directo
 ## Quick Reference: Key Methods
 
 ```python
-# ui.py - Main download logic
-def download_process(self):           # Background thread entry point
-def authenticate(self):                # Get auth token
-def process_item(self, item_id, ...): # Download single item
-def import_to_calibre(self):          # Add to Calibre DB
-def is_duplicate(self, db, mi):       # Check if book exists
+# main.py
+def download_books(self):             # Orchestrates picker + download
 
-# config.py - Settings
-def save_settings(self):              # Save user config
+# core/api.py
+def login(self, username, password)
+def get_libraries(self)
+def get_library_items(self, library_id)
+def get_item(self, item_id)
+def download_to_path(self, item_id, ino, dest_path)
+
+# core/downloader.py
+def download_process(self):           # Background thread entry point
+def process_item(self, item_id)
+
+# core/calibre_import.py
+def import_files(gui, file_paths, log)
+def is_duplicate(db, mi)
+
+# core/config.py
+def save_settings(self)
 ```
 
 ## Plugin Lifecycle
 
 ```
 1. User clicks button → genesis() called once
-2. show_dialog() / download_books() called on click
-3. Authenticate with server
-4. Show library selection dialog
-5. User selects libraries → show download dialog
-6. Background thread downloads files
-7. Import to Calibre database (in same thread)
-8. Show "Press F5 to see books" message
-9. Close dialog
+2. download_books() on click
+3. Authenticate with server (AbsClient.login)
+4. Library selection dialog (restore last library IDs)
+5. Persist selected library IDs, then fetch items (main thread, wait cursor)
+6. Book selection dialog
+7. Download dialog: background thread downloads selected items
+8. Import to Calibre database (in same thread)
+9. Show "Press F5 to see books" message
+10. Close dialog
 ```
 
 ## License
