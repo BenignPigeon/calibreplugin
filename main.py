@@ -84,11 +84,16 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
                 )
                 return
 
-            library_dialog = LibrarySelectDialog(self.gui, libraries)
+            library_dialog = LibrarySelectDialog(
+                self.gui, libraries, prefs['selected_library_ids']
+            )
             if library_dialog.exec_() != QDialog.Accepted:
                 return
 
             selected_libraries = library_dialog.selected_libraries
+            prefs['selected_library_ids'] = [
+                lib.get('id') for lib in selected_libraries if lib.get('id')
+            ]
             items = self._load_items(client, selected_libraries)
             if items is None:
                 return

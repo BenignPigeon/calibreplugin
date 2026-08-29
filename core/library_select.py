@@ -19,7 +19,7 @@ class LibrarySelectDialog(QDialog):
     Dialog for selecting which libraries to download from
     '''
 
-    def __init__(self, parent, libraries):
+    def __init__(self, parent, libraries, previously_selected_ids=None):
         QDialog.__init__(self, parent)
         self.setWindowTitle('Select Libraries')
         self.libraries = libraries
@@ -36,11 +36,20 @@ class LibrarySelectDialog(QDialog):
         self.search_edit.textChanged.connect(self._apply_filter)
         self.layout.addWidget(self.search_edit)
 
+        remembered_ids = set(previously_selected_ids or [])
+        restore_selection = bool(remembered_ids) and any(
+            lib.get('id') in remembered_ids for lib in libraries
+        )
+
         self.list_widget = QListWidget()
         for lib in libraries:
             item = QListWidgetItem(lib['name'])
             item.setFlags(item.flags() | Qt.ItemIsUserCheckable)
-            item.setCheckState(Qt.Checked)
+            if restore_selection:
+                checked = lib.get('id') in remembered_ids
+                item.setCheckState(Qt.Checked if checked else Qt.Unchecked)
+            else:
+                item.setCheckState(Qt.Checked)
             item.setData(Qt.UserRole, lib)
             self.list_widget.addItem(item)
 
@@ -48,8 +57,10 @@ class LibrarySelectDialog(QDialog):
 
         select_layout = QHBoxLayout()
         select_all_button = QPushButton('Select All')
+        select_all_button.setAutoDefault(False)
         select_all_button.clicked.connect(lambda: self._set_visible_check_state(Qt.Checked))
         select_none_button = QPushButton('Select None')
+        select_none_button.setAutoDefault(False)
         select_none_button.clicked.connect(lambda: self._set_visible_check_state(Qt.Unchecked))
         select_layout.addWidget(select_all_button)
         select_layout.addWidget(select_none_button)
@@ -58,8 +69,10 @@ class LibrarySelectDialog(QDialog):
 
         button_layout = QHBoxLayout()
         self.next_button = QPushButton('Next')
+        self.next_button.setDefault(True)
         self.next_button.clicked.connect(self.accept)
         self.cancel_button = QPushButton('Cancel')
+        self.cancel_button.setAutoDefault(False)
         self.cancel_button.clicked.connect(self.reject)
 
         button_layout.addStretch()
@@ -89,7 +102,7 @@ class LibrarySelectDialog(QDialog):
         self.selected_libraries = []
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
-            if item.checkState() == Qt.Checked:
+            if not item.isHidden() and item.checkState() == Qt.Checked:
                 self.selected_libraries.append(item.data(Qt.UserRole))
 
         if not self.selected_libraries:

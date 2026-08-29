@@ -20,6 +20,7 @@ prefs.defaults['username'] = ''
 prefs.defaults['password'] = ''
 prefs.defaults['auto_import'] = True
 prefs.defaults['skip_duplicates'] = True
+prefs.defaults['selected_library_ids'] = []
 
 
 class ConfigWidget(QWidget):

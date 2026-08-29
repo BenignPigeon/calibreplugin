@@ -63,8 +63,10 @@ class ItemSelectDialog(QDialog):
 
         select_layout = QHBoxLayout()
         select_all_button = QPushButton('Select All')
+        select_all_button.setAutoDefault(False)
         select_all_button.clicked.connect(lambda: self._set_visible_check_state(Qt.Checked))
         select_none_button = QPushButton('Select None')
+        select_none_button.setAutoDefault(False)
         select_none_button.clicked.connect(lambda: self._set_visible_check_state(Qt.Unchecked))
         select_layout.addWidget(select_all_button)
         select_layout.addWidget(select_none_button)
@@ -73,8 +75,10 @@ class ItemSelectDialog(QDialog):
 
         button_layout = QHBoxLayout()
         self.download_button = QPushButton('Download Selected')
+        self.download_button.setDefault(True)
         self.download_button.clicked.connect(self.accept)
         self.cancel_button = QPushButton('Cancel')
+        self.cancel_button.setAutoDefault(False)
         self.cancel_button.clicked.connect(self.reject)
 
         button_layout.addStretch()
@@ -111,7 +115,7 @@ class ItemSelectDialog(QDialog):
         self.selected_items = []
         for i in range(self.list_widget.count()):
             item = self.list_widget.item(i)
-            if item.checkState() == Qt.Checked:
+            if not item.isHidden() and item.checkState() == Qt.Checked:
                 self.selected_items.append(item.data(Qt.UserRole))
 
         if not self.selected_items:
