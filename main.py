@@ -6,14 +6,13 @@ __license__ = 'GPL v3'
 __copyright__ = '2026, benignpigeon'
 __docformat__ = 'restructuredtext en'
 
-from PyQt5.Qt import QApplication, QDialog, QMenu, QMessageBox, Qt, QToolButton
+from PyQt5.Qt import (QAction, QApplication, QDialog, QMenu, QMessageBox, Qt, QToolButton)
 
 from calibre.gui2.actions import InterfaceAction
 from calibre.gui2 import error_dialog, info_dialog
 from calibre_plugins.audiobookshelf_downloader.core.config import prefs
 from calibre_plugins.audiobookshelf_downloader.core.api import AbsClient, normalize_item
-from calibre_plugins.audiobookshelf_downloader.core.library_select import LibrarySelectDialog
-from calibre_plugins.audiobookshelf_downloader.core.item_select import ItemSelectDialog
+from calibre_plugins.audiobookshelf_downloader.core.select_dialogs import (LibrarySelectDialog, ItemSelectDialog)
 from calibre_plugins.audiobookshelf_downloader.core.downloader import DownloadDialog
 
 
@@ -32,7 +31,6 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
     def genesis(self):
         icon = get_icons('images/abs_icon.png', 'Audiobookshelf Downloader')
         self.qaction.setIcon(icon)
-        self.plugin_icon = icon
 
         self.menu = QMenu(self.gui)
         self.qaction.setMenu(self.menu)
@@ -41,8 +39,6 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
         self.create_menu_actions()
 
     def create_menu_actions(self):
-        from PyQt5.Qt import QAction
-
         config_action = QAction('Configure...', self.gui)
         config_action.triggered.connect(self.show_configuration)
         self.menu.addAction(config_action)
@@ -111,7 +107,7 @@ class AudiobookshelfDownloaderAction(InterfaceAction):
                 return
 
             download_dialog = DownloadDialog(
-                self.gui, self.gui, client, item_dialog.selected_items
+                self.gui, client, item_dialog.selected_items
             )
             download_dialog.exec_()
 

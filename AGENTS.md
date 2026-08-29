@@ -29,7 +29,7 @@ python3 build_plugin.py
 3. Restart Calibre
 
 ### Version Management
-- Version is stored in `version.txt` (format: `1.0.3`)
+- Version is stored in `version.txt` (format: `1.0.4`)
 - Build script auto-updates `__init__.py` version tuple from `version.txt`
 - To bump version: edit `version.txt`, then run `build_plugin.py`
 
@@ -44,17 +44,18 @@ python3 build_plugin.py
 │   ├── config.py            # Preferences / Customise Plugin dialog
 │   ├── api.py               # Audiobookshelf HTTP client
 │   ├── calibre_import.py    # Duplicate check + add_books
-│   ├── library_select.py    # Library picker (search + checkboxes)
-│   ├── item_select.py       # Book picker (search + checkboxes)
+│   ├── select_dialogs.py    # Shared checkbox-list UI + library/book pickers
 │   └── downloader.py        # Progress dialog + background download
 ├── version.txt              # Single source of truth for version
 ├── build_plugin.py          # Build script (creates ZIP)
 ├── plugin-import-name-*.txt # Calibre package name (required)
 ├── images/abs_icon.png      # Plugin toolbar icon
-└── README.md                # User documentation
+├── README.md                # User documentation
+├── AGENTS.md                # Agent instructions
+└── info.md                  # Brief map of coding files
 ```
 
-Calibre expects `__init__.py` at the **zip root**. The package name is `calibre_plugins.audiobookshelf_downloader` from `plugin-import-name-audiobookshelf_downloader.txt`, not from a wrapping folder. Python modules cannot use hyphens (`library_select.py`, not `library-select.py`).
+Calibre expects `__init__.py` at the **zip root**. The package name is `calibre_plugins.audiobookshelf_downloader` from `plugin-import-name-audiobookshelf_downloader.txt`, not from a wrapping folder. Python modules cannot use hyphens (`select_dialogs.py`, not `select-dialogs.py`).
 
 ### Core Components
 
@@ -72,15 +73,18 @@ Calibre expects `__init__.py` at the **zip root**. The package name is `calibre_
 **`core/config.py`**
 - `ConfigWidget(QWidget)` - Settings UI
 - `prefs = JSONConfig('plugins/audiobookshelf_downloader')` - Config storage
-- Settings: `server_url`, `username`, `password`, `auto_import`, `skip_duplicates`
+- Settings: `server_url`, `username`, `password`, `auto_import`, `skip_duplicates`, `selected_library_ids`
 
 **`core/api.py`**
 - `AbsClient` - login, libraries, paginated items, item details, file download
 - Shared User-Agent + Bearer headers
 - `normalize_item()` for the book picker
 
-**`core/library_select.py` / `core/item_select.py`**
-- Checkable lists with search filter and Select All / Select None (visible rows only)
+**`core/select_dialogs.py`**
+- `CheckableListDialog` - searchable checkbox list; Select All/None and accept() use **visible rows only**
+- Default (Enter) button is Next / Download Selected, not Select All
+- `LibrarySelectDialog` - restores `prefs['selected_library_ids']` (checked vs unchecked); first run or no matching IDs → all checked
+- `ItemSelectDialog` - books start checked; display text is title/author/library
 
 **`core/downloader.py`**
 - `DownloadDialog` - progress UI and daemon download thread
@@ -109,6 +113,7 @@ Calibre expects `__init__.py` at the **zip root**. The package name is `calibre_
 - Downloads run in background thread (`threading.Thread`)
 - Use `QApplication.processEvents()` for UI responsiveness
 - Thread is daemon for clean shutdown
+- Library view refresh must use a Qt signal (`refresh_gui_signal`) so it runs on the GUI thread
 
 ## API Endpoints (Audiobookshelf)
 
@@ -184,8 +189,8 @@ python3 build_plugin.py
 # - Should authenticate successfully
 
 # 4. Test download
-# - Select libraries (search/filter works)
-# - Select books (search/filter works)
+# - Select libraries (previous picks restored; search/filter works; Enter = Next)
+# - Select books (search/filter + Download Selected only include visible checks)
 # - Watch progress dialog
 # - Verify books imported (press F5 in Calibre)
 
@@ -219,7 +224,8 @@ Calibre → Preferences → Miscellaneous → Open calibre configuration directo
 
 ## Version History
 
-- **v1.0.3** (current) - Segfault fix (removed GUI refresh), duplicate detection
+- **v1.0.4** (current) - Library/book pickers, remembered libraries, visible-only accept
+- **v1.0.3** - Segfault fix (GUI refresh via signal), duplicate detection
 - **v1.0.2** - Improved error handling
 - **v1.0.1** - Cloudflare authentication fix
 - **v1.0.0** - Initial release
@@ -255,8 +261,8 @@ def save_settings(self)
 1. User clicks button → genesis() called once
 2. download_books() on click
 3. Authenticate with server (AbsClient.login)
-4. Library selection dialog
-5. Fetch items for selected libraries (main thread, wait cursor)
+4. Library selection dialog (restore last library IDs)
+5. Persist selected library IDs, then fetch items (main thread, wait cursor)
 6. Book selection dialog
 7. Download dialog: background thread downloads selected items
 8. Import to Calibre database (in same thread)

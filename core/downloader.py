@@ -8,6 +8,7 @@ __docformat__ = 'restructuredtext en'
 
 import os
 import tempfile
+import traceback
 from threading import Thread
 
 from PyQt5.Qt import (
@@ -33,8 +34,8 @@ class DownloadDialog(QDialog):
     close_button_signal = pyqtSignal(bool)
     refresh_gui_signal = pyqtSignal()
 
-    def __init__(self, parent, gui, client, selected_items):
-        QDialog.__init__(self, parent)
+    def __init__(self, gui, client, selected_items):
+        QDialog.__init__(self, gui)
         self.setWindowTitle('Downloading from Audiobookshelf')
         self.gui = gui
         self.client = client
@@ -69,21 +70,9 @@ class DownloadDialog(QDialog):
         self.close_button_signal.connect(self._do_close_button)
         self.refresh_gui_signal.connect(self._do_refresh_gui)
 
-        self.download_thread = Thread(target=self.safe_download_process)
+        self.download_thread = Thread(target=self.download_process)
         self.download_thread.daemon = True
         self.download_thread.start()
-
-    def safe_download_process(self):
-        try:
-            self.download_process()
-        except Exception as e:
-            import traceback
-            self.log('\n\n💥 CRITICAL ERROR 💥')
-            self.log(f'Error: {e}')
-            self.log(f'\nFull traceback:\n{traceback.format_exc()}')
-            self.status_signal.emit('Critical error occurred!')
-            self.progress_signal.emit(0, 1, 1)
-            self.close_button_signal.emit(True)
 
     def log(self, message):
         self.log_signal.emit(message)
@@ -149,7 +138,6 @@ class DownloadDialog(QDialog):
                         self.log('🔄 Refreshing library view...')
                         self.refresh_gui_signal.emit()
                 except Exception as import_error:
-                    import traceback
                     self.log(f'✗ Import failed: {import_error}')
                     self.log(f'Import traceback:\n{traceback.format_exc()}')
 
@@ -157,9 +145,9 @@ class DownloadDialog(QDialog):
             self.log('\n✅ Done! Close this window and press F5 to see new books.')
 
         except Exception as e:
-            import traceback
-            self.log(f'\n✗ Error: {e}')
-            self.log(f'Details: {traceback.format_exc()}')
+            self.log('\n\n💥 CRITICAL ERROR 💥')
+            self.log(f'Error: {e}')
+            self.log(f'\nFull traceback:\n{traceback.format_exc()}')
             self.status_signal.emit('Download failed!')
         finally:
             self.progress_signal.emit(0, 1, 1)

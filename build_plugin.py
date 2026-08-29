@@ -11,7 +11,6 @@ import sys
 PLUGIN_NAME = "Audiobookshelf_Downloader"
 VERSION_FILE = "version.txt"
 INIT_FILE = "__init__.py"
-OUTPUT_FILE = None # Defined after reading version
 
 # Files to include in the plugin (ensure version.txt is included if you want it packaged)
 PLUGIN_FILES = [
