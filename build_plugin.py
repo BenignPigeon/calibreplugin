@@ -16,13 +16,13 @@ OUTPUT_FILE = None # Defined after reading version
 # Files to include in the plugin (ensure version.txt is included if you want it packaged)
 PLUGIN_FILES = [
     '__init__.py',
-    'config.py',
-    'ui.py',
+    'main.py',
     'version.txt',
     'plugin-import-name-audiobookshelf_downloader.txt',
     'README.md',
-    'images/abs_icon.png'
+    'images/abs_icon.png',
 ]
+PLUGIN_DIRS = ['core']
 
 def update_init_version(version_str):
     """Dynamically update the version tuple in __init__.py based on version.txt"""
@@ -86,6 +86,18 @@ def build_plugin():
                     zipf.write(file, file)
                 else:
                     print(f"  WARNING: {file} not found, skipping")
+
+            for directory in PLUGIN_DIRS:
+                if not os.path.isdir(directory):
+                    print(f"  WARNING: {directory}/ not found, skipping")
+                    continue
+                for root, _dirs, files in os.walk(directory):
+                    for name in files:
+                        if not name.endswith('.py'):
+                            continue
+                        path = os.path.join(root, name)
+                        print(f"  Adding: {path}")
+                        zipf.write(path, path)
         
         print(f"\n✓ Plugin built successfully: {output_file}")
         print("\nTo install in Calibre:")
